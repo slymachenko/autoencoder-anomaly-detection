@@ -1,0 +1,13 @@
+name: aad
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - ipykernel
+  - matplotlib
+  - scikit-learn
+  - pip:
+      - -e common/
+      - torch
+      - torchvision
