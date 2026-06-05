@@ -1,6 +1,24 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+def plot_fbeta_vs_threshold(
+    thresholds,
+    fbeta_vals,
+    best_threshold,
+    beta,
+):
+    plt.style.use('fivethirtyeight')
+    plt.figure(figsize=(10,5))
+    plt.plot(thresholds, fbeta_vals, label=f'F{beta}')
+    plt.axvline(best_threshold, color='black', linestyle='--', linewidth=2, label=f'best thr={best_threshold:.4f}')
+    plt.xlabel('Threshold')
+    plt.ylabel(f'F{beta} score')
+    plt.title(f'F{beta} vs Threshold (from Optimization History)')
+    plt.grid(alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
 def plot_anomaly_distribution(normal_scores: np.ndarray, anomaly_scores: np.ndarray, threshold: float, title: str = "Anomaly Score Distribution"):
     plt.style.use('fivethirtyeight')
     fig, ax = plt.subplots(figsize=(10, 5))
