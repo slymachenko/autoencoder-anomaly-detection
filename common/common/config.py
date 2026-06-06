@@ -3,8 +3,8 @@ from pathlib import Path
 # PATHS
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 
-ASSETS_PATH = ROOT_DIR / "assets"
-FIGS_PATH = ASSETS_PATH / "figs"
+ASSETS_DIR = ROOT_DIR / "assets"
+FIGS_DIR = ASSETS_DIR / "figs"
 
 DATA_DIR = ROOT_DIR / "data"
 DATA_RAW_DIR = DATA_DIR / "raw"
