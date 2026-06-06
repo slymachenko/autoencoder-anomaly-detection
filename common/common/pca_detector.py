@@ -1,27 +1,3 @@
-# from sklearn.decomposition import PCA
-# import torch
-
-# class PCAAnomalyDetector:
-#     def __init__(self, n_components=None, random_state = None):
-#         super() = PCA(n_components=n_components, random_state=random_state)
-
-#     def fit(self, X):
-#         X_flat = X.reshape(X.shape[0], -1)
-#         super().fit(X_flat)
-
-#     def reconstruct(self, X):
-#         X_flat = X.reshape(X.shape[0], -1)
-#         X_pca = super().transform(X_flat)
-#         X_recon = super().inverse_transform(X_pca)
-#         return torch.tensor(X_recon).float().to(X.device)
-
-#     def score_samples(self, X):
-#         X_flat = X.reshape(X.shape[0], -1)
-#         X_recon = self.reconstruct(X)
-#         mse = ((X_flat - X_recon) ** 2).mean(axis=1)
-#         return mse
-
-
 from sklearn.decomposition import PCA
 import torch
 
@@ -49,5 +25,5 @@ class PCAAnomalyDetector(PCA):
     def score_samples(self, X: torch.Tensor) -> torch.Tensor:
         X_flat = X.reshape(X.shape[0], -1)
         X_recon = self.reconstruct(X)
-        mse = ((X_flat - X_recon) ** 2).mean(axis=1)
+        mse = torch.mean((X_flat - X_recon) ** 2, dim=1)
         return mse
