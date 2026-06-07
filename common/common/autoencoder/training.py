@@ -1,0 +1,82 @@
+import torch
+import torch.nn as nn
+import tqdm
+
+from typing import List, Optional, Callable
+from torch.utils.data import DataLoader
+from torch.optim import Optimizer
+from torch import Tensor
+
+def train_autoencoder(
+    model: nn.Module,
+    train_loader: DataLoader,
+    criterion_fn: Callable[[Tensor, Tensor], Tensor],
+    optimizer: Optimizer,
+    device: torch.device,
+    loss_eps: float = 1e-4,
+    patience: int = 5,
+    max_epochs: int = 100,
+    corruption_fn: Optional[Callable[[Tensor], Tensor]] = None,
+    verbose: bool = False
+) -> List[float]:
+    """
+    Args:
+        criterion_fn: A callable: criterion_fn(reconstructed, target) -> scalar tensor. This allows passing a custom hybrid MSE + SSIM loss class.
+        corruption_fn: An optional callable: corruption_fn(img_tensor) -> corrupted_img_tensor. Perfect for dynamically injecting masking or Gaussian noise.
+    """
+    epoch_losses = []
+    best_state = None
+    best_epoch_loss = float("inf")
+
+    pbar = tqdm.tqdm(desc="Training Autoencoder", disable=(not verbose), unit=" epoch")
+
+    try:
+        for epoch in range(max_epochs):
+            model.train()
+            running_loss = 0.0
+
+            for data, _ in train_loader:
+                clean_img = data.to(device) if data.device != device else data
+
+                input_img = clean_img if corruption_fn is None else corruption_fn(clean_img)
+
+                # Forward pass
+                output = model(input_img)
+                loss = criterion_fn(output, clean_img)
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                running_loss += loss.item() * clean_img.size(0)
+
+            epoch_loss = running_loss / len(train_loader.dataset)
+            epoch_losses.append(epoch_loss)
+
+            improvement = best_epoch_loss - epoch_loss
+            if improvement > loss_eps:
+                best_epoch_loss = epoch_loss
+                best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+                patience_counter = 0
+            else:
+                patience_counter += 1
+
+            pbar.update(1)
+            pbar.set_postfix({
+                "Loss": f"{epoch_loss:.3e}",
+                "Best": f"{best_epoch_loss:.3e}",
+                "Patience": f"{patience_counter}/{patience}"
+            })
+
+            if patience_counter >= patience:
+                pbar.write(f"[Early Stopped at Epoch {epoch+1}]")
+                break
+        else:
+            pbar.write(f"[Hit Max Epochs]")
+    finally:
+        pbar.close()
+
+    if best_state is not None:
+        model.load_state_dict(best_state)
+        
+    return epoch_losses
