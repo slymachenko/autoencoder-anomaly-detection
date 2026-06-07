@@ -3,11 +3,14 @@ channels:
   - conda-forge
 dependencies:
   - python=3.12
-  - numpy
+  - pip
   - ipykernel
+  - numpy
   - matplotlib
   - scikit-learn
+  - tqdm
   - pip:
       - -e common/
       - torch
       - torchvision
+      - piq
