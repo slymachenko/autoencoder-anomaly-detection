@@ -9,7 +9,7 @@ This repository contains the codebase and raw scientific report for an **Anomaly
 
 1. Clone the repository:
 
-    `git clone https://github.com/slymachenko/data-augmentation-strategies.git`
+    `git clone https://github.com/slymachenko/autoencoder-anomaly-detection.git`
 
 2. Navigate to the project directory.
 3. Move input data to `data/raw/` directory
