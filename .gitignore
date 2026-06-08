@@ -16,3 +16,5 @@ envs/
 
 # workspace settings
 .vscode
+
+.pdf
