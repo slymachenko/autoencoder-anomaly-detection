@@ -2,7 +2,7 @@ from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_prec
 import matplotlib.pyplot as plt
 import numpy as np
 
-from typing import Optional
+from typing import Optional, Dict, Any
 from pathlib import Path
 
 def plot_fbeta_vs_threshold(
@@ -107,6 +107,48 @@ def plot_performance_curves(
     ax[1].legend(loc="lower left")
     
     fig.tight_layout()
+    plt.show()
+
+    if save_path:
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
+
+def plot_loss(
+        losses: np.ndarray | Dict[Any, np.ndarray],
+        highlight_key: Optional[Any] = None,
+        label_prefix: str = "",
+        title: str = "Autoencoder Training Loss",
+        loss_prefix: str = "MSE",
+        legend_title: Optional[str] = None,
+        save_path: Optional[str | Path] = None
+):
+    plt.style.use('fivethirtyeight')
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    if isinstance(losses, dict):
+        for key in sorted(losses.keys()):
+            loss_arr = losses[key]
+
+            if highlight_key is not None:
+                is_highlighted = (key == highlight_key)
+                opacity = 1.0 if is_highlighted else 0.3
+                color = "red" if is_highlighted else None
+            else:
+                opacity = 1.0
+                color = None
+
+            label_val = f"{key:<.4f}" if isinstance(key, float) else str(key)
+            label_str = f"{label_prefix}{label_val}"
+            ax.plot(loss_arr, label=label_str, linewidth=2, alpha=opacity, color=color)
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', title=legend_title)
+    else:
+        ax.plot(losses, label="Epoch loss", linewidth=2)
+        ax.legend()
+
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel(f"{loss_prefix}Loss")
+    ax.set_title(title)
+
+    plt.tight_layout()
     plt.show()
 
     if save_path:
