@@ -1,5 +1,5 @@
 # general
-data/
+data/*
 local/
 assets/
 logs/
@@ -19,3 +19,4 @@ envs/
 
 *.pdf
 .*.typ
+!data/raw/
