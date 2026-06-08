@@ -12,9 +12,7 @@ This repository contains the codebase and raw scientific report for an **Anomaly
     `git clone https://github.com/slymachenko/autoencoder-anomaly-detection.git`
 
 2. Navigate to the project directory.
-3. Move input data to `data/raw/` directory
-4. Set environment variables in `.env` file (see `example.env`)
-5. Create conda environment:
+3. Create conda environment:
 
     ```bash
     conda env create -f environment.yml
