@@ -1,11 +1,25 @@
 import torch
 import torch.nn as nn
+import torchvision.transforms.functional as TF
+from torchvision.transforms import InterpolationMode
+import itertools
 import numpy as np
+from sklearn.metrics import (
+    accuracy_score, 
+    precision_score, 
+    recall_score, 
+    fbeta_score, 
+    confusion_matrix, 
+    classification_report
+)
 
-from typing import Tuple
-from torch.utils.data import DataLoader
-
-def score_images(model, images, device, criterion = nn.functional.mse_loss):
+def score_images(
+        model,
+        images,
+        device,
+        criterion_fn = nn.functional.mse_loss,
+        reduction = "none"
+):
     model.eval()
     images = images.reshape(images.shape[0], 1, 28, 28)
 
@@ -14,10 +28,11 @@ def score_images(model, images, device, criterion = nn.functional.mse_loss):
 
     with torch.no_grad():
         reconstruction = model(images)
-        pixel_errors = criterion(reconstruction, images, reduction="none")
-        scores = torch.mean(pixel_errors, dim=(1, 2, 3)).cpu().numpy()
+        scores = criterion_fn(reconstruction, images, reduction = reduction)
+        if scores.ndim > 1:
+            scores = torch.mean(scores, dim=tuple([i for i in range(1, scores.ndim)]))
 
-    return scores
+    return scores.cpu().numpy()
 
 def get_reconstructions(model, images, device, n=8):
     model.eval()
@@ -28,51 +43,58 @@ def get_reconstructions(model, images, device, n=8):
     
     return sample_images.cpu().numpy(), reconstructions.numpy()
 
-@torch.no_grad()
-def evaluate_anomaly_ensemble(
-    model: nn.Module, 
-    test_loader: DataLoader, 
-    device: torch.device
-) -> Tuple[np.ndarray, np.ndarray]:
+def print_metrics(
+    y_true: np.ndarray, 
+    y_scores: np.ndarray, 
+    threshold: float, 
+    beta: float = 2.0
+):
+    """Prints a comprehensive evaluation report."""
+    y_pred = (y_scores > threshold).astype(int)
+
+    print(f"--- Evaluation Metrics ---")
+    print(f"Best threshold for F{beta}-score: {threshold:.6f}")
+    print(f"Accuracy:  {accuracy_score(y_true, y_pred):.4f}")
+    print(f"Precision: {precision_score(y_true, y_pred):.4f}")
+    print(f"Recall:    {recall_score(y_true, y_pred):.4f}")
+    print(f"F{beta} score:  {fbeta_score(y_true, y_pred, beta=beta):.4f}")
+
+    print("\nConfusion matrix:")
+    print(confusion_matrix(y_true, y_pred))
+
+    print("\nClassification report:")
+    print(classification_report(y_true, y_pred, digits=4))
+
+def score_images_variation(model, images, device, criterion_fn, reduction="none"):
     """
-    Experiment 3: Test-Time Input Transformation Ensembling (Multi-rotation variance).
-    Computes both standard reconstruction errors and variance across 4 canonical rotations.
+    Evaluates anomaly confidence using Test-Time Augmentation (TTA).
+    Calculates the variance of errors of all unique pairwise combinations of reconstructed images.
     """
     model.eval()
-    all_scores = []
-    all_variances = []
-    
-    # Standard MSE fallback for individual pixel maps if no criterion is passed
-    base_mse = nn.MSELoss(reduction='none')
+    images = images.reshape(images.shape[0], 1, 28, 28)
 
-    for data, _ in test_loader:
-        img = data.to(device)
-        batch_rotation_errors = []
+    if images.device != device:
+        images = images.to(device)
 
-        # Evaluate across 0, 90, 180, and 270 degrees
-        for k in range(4):
-            rotated = torch.rot90(img, k, dims=[-2, -1])
-            recon_rotated = model(rotated)
-            # Realign the output spatially back to original orientation
-            recon_unrotated = torch.rot90(recon_rotated, -k, dims=[-2, -1])
-            
-            # Calculate sample spatial error maps (unreduced)
-            pixel_error = base_mse(recon_unrotated, img) 
-            batch_rotation_errors.append(pixel_error)
-            
-        # Shape: [4, Batch, Channels, H, W]
-        stacked_errors = torch.stack(batch_rotation_errors)
-        
-        # 1. Anomaly Score: Mean reconstruction error across the ensemble
-        mean_spatial_error = torch.mean(stacked_errors, dim=0)
-        # Reduce to a single score per image in the batch (Mean across channels & spatial dimensions)
-        image_anomaly_scores = mean_spatial_error.mean(dim=[-3, -2, -1])
-        
-        # 2. Test-Time Rotation Variance: High variance typically correlates with anomalies
-        spatial_variance = torch.var(stacked_errors, dim=0)
-        image_variance_scores = spatial_variance.mean(dim=[-3, -2, -1])
+    angles = [-40, -30, -20, 0, 20, 30, 40]
+    reconstructions = []
 
-        all_scores.extend(image_anomaly_scores.cpu().numpy())
-        all_variances.extend(image_variance_scores.cpu().numpy())
+    # Collect all reconstructions across all angles
+    with torch.no_grad():
+        for angle in angles:
+            rotated_imgs = TF.rotate(images, angle, interpolation=InterpolationMode.BILINEAR)
+            recon = model(rotated_imgs)
+            reconstructions.append(recon)
 
-    return np.array(all_scores), np.array(all_variances)
+    # Compute all unique pairwise errors between reconstructions
+    pairwise_errors = []
+    for recon_a, recon_b in itertools.combinations(reconstructions, 2):
+        pair_error = criterion_fn(recon_a, recon_b, reduction=reduction)
+        if pair_error.ndim > 1:
+            pair_error = torch.mean(pair_error, dim=tuple([i for i in range(1, pair_error.ndim)]))
+        pairwise_errors.append(pair_error)
+
+    stacked_pairwise = torch.stack(pairwise_errors, dim=0)
+    mean_pairwise_scores = torch.var(stacked_pairwise, dim=0)
+
+    return mean_pairwise_scores.cpu().numpy()

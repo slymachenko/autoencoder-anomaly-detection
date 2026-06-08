@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from piq import ssim
 import tqdm
 
 from typing import List, Optional, Callable
@@ -21,8 +22,8 @@ def train_autoencoder(
 ) -> List[float]:
     """
     Args:
-        criterion_fn: A callable: criterion_fn(reconstructed, target) -> scalar tensor. This allows passing a custom hybrid MSE + SSIM loss class.
-        corruption_fn: An optional callable: corruption_fn(img_tensor) -> corrupted_img_tensor. Perfect for dynamically injecting masking or Gaussian noise.
+        criterion_fn: A callable: criterion_fn(reconstructed, target) -> scalar tensor.
+        corruption_fn: An optional callable: corruption_fn(img_tensor) -> corrupted_img_tensor.
     """
     epoch_losses = []
     best_state = None
@@ -42,7 +43,7 @@ def train_autoencoder(
 
                 # Forward pass
                 output = model(input_img)
-                loss = criterion_fn(output, clean_img)
+                loss = criterion_fn(output, clean_img, reduction="mean")
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -69,10 +70,10 @@ def train_autoencoder(
             })
 
             if patience_counter >= patience:
-                pbar.write(f"[Early Stopped at Epoch {epoch+1}]")
+                pbar.set_description(f"[Early Stopped at Epoch {epoch+1}]")
                 break
         else:
-            pbar.write(f"[Hit Max Epochs]")
+            pbar.set_description(f"[Hit Max Epochs]")
     finally:
         pbar.close()
 
@@ -80,3 +81,28 @@ def train_autoencoder(
         model.load_state_dict(best_state)
         
     return epoch_losses
+
+class HybridLoss(nn.Module):
+    def __init__(self, alpha = 0.5):
+        super().__init__()
+        self.alpha = alpha
+
+    def forward(self, x_hat, x, reduction = "mean"):
+        loss_mse = nn.functional.mse_loss(x_hat, x, reduction = reduction)
+        if loss_mse.ndim > 1:
+            loss_mse = torch.mean(loss_mse, dim=tuple([i for i in range(1, loss_mse.ndim)]))
+        # SSIM is 1 for identical images, so we minimize (1 - (ssim + 1)/2) = (1 - ssim)/2
+        loss_ssim = (1.0 - ssim(x_hat, x, data_range = 1.0, reduction = reduction)) / 2.0
+
+        return (self.alpha * loss_mse) + ((1 - self.alpha) * loss_ssim)
+
+class GaussianNoiseCorruption:
+    def __init__(self, mean: float = 0.0, std: float = 0.2):
+        self.mean = mean
+        self.std = std
+
+    def __call__(self, img_tensor):
+        corrupted = img_tensor.clone()
+        noise = torch.randn_like(corrupted) * self.std + self.mean
+        corrupted = corrupted + noise
+        return torch.clamp(corrupted, 0.0, 1.0)
