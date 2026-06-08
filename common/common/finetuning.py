@@ -1,5 +1,6 @@
 import numpy as np
 from sklearn.metrics import average_precision_score, precision_recall_curve
+from decimal import Decimal
 
 from typing import Callable, Tuple, Dict, Any, List
 
@@ -23,17 +24,45 @@ def optimize_via_zooming_grid(
         param_name: [],
         "auc": []
     }
+    visited_params = set()
 
-    for step in range(depth):
+    def get_decimals(val: float) -> int:
+        if isinstance(val, int):
+            return 0
+        d = Decimal(str(val)).normalize()
+        return abs(d.as_tuple().exponent) if d.as_tuple().exponent < 0 else 0
+
+    base_decimals = max(get_decimals(param_min), get_decimals(param_max))
+
+    for step in range(1, depth+1):
+        current_decimals = base_decimals + step
+
         if verbose:
-            print(f"\nZoom Step {step+1}/{depth} Interval: [{current_min:.4f}, {current_max:.4f}]")
+            print(f"\nZoom Step {step}/{depth} Interval: [{current_min:.4f}, {current_max:.4f}]")
             print(f"{param_name:<10} | {'PR AUC':<10}")
 
-        grid = np.linspace(current_min, current_max, size)
-        if is_integer:
-            grid = np.unique(np.round(grid).astype(int))
-        local_best_auc = -1.0
-        local_best_param = None
+        # make sure only unique values are in the grid
+        candidates = []
+        res_mul = 1
+
+        while len(candidates) < size and res_mul <= 20:
+            raw_grid = np.linspace(current_min, current_max, size * res_mul)
+
+            if is_integer:
+                raw_grid = np.round(raw_grid).astype(int)
+            else:
+                raw_grid = np.round(raw_grid, decimals=current_decimals)
+
+            for val in raw_grid:
+                val = int(val) if is_integer else float(val)
+                # Check against history AND current candidate list
+                if val not in visited_params and val not in candidates:
+                    candidates.append(val)
+                    if len(candidates) == size:
+                        break
+            res_mul += 1
+
+        grid = sorted(candidates)
 
         for param_val in grid:
             param_val = int(param_val) if is_integer else float(param_val)
@@ -47,21 +76,18 @@ def optimize_via_zooming_grid(
             if verbose:
                 print(f"{param_val:<10.4f} | {auc:<10.4f}")
 
-            history["zoom_step"].append(step + 1)
+            history["zoom_step"].append(step)
             history[param_name].append(param_val)
             history["auc"].append(float(auc))
 
-            if auc > local_best_auc:
-                local_best_auc = auc
-                local_best_param = param_val
             if auc > global_best_auc:
                 global_best_auc = auc
                 global_best_param = param_val
 
         # Update bounds around the local best configuration found in this step
-        step_size = (current_max - current_min) / (size - 1)
-        current_min = np.clip(local_best_param - (step_size / 2), param_min, param_max)
-        current_max = np.clip(local_best_param + (step_size / 2), param_min, param_max)
+        step_size = (current_max - current_min) / max(len(grid) - 1, 1)
+        current_min = np.clip(global_best_param - step_size, param_min, param_max)
+        current_max = np.clip(global_best_param + step_size, param_min, param_max)
 
         if is_integer:
             current_min, current_max = np.floor(current_min), np.ceil(current_max)
